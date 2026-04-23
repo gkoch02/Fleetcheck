@@ -47,7 +47,15 @@ so `~/.cargo/bin` is on `$PATH`:
 
 ```sh
 source "$HOME/.cargo/env"
-rustc --version   # expect 1.75 or newer
+rustc --version   # expect 1.85 or newer
+```
+
+If `rustup` is already installed but the toolchain is older than 1.85,
+update it before continuing — `openssh`'s transitive deps require the
+2024 edition:
+
+```sh
+rustup update stable
 ```
 
 ### 3. Confirm `ssh` is present
@@ -94,7 +102,7 @@ as `UNREACHABLE`.
 ```sh
 git clone <this repo> ~/src/fleetcheck
 cd ~/src/fleetcheck
-cargo install --path .
+cargo install --locked --path .
 ```
 
 `cargo install` drops a release-mode `fleetcheck` in `~/.cargo/bin/`
