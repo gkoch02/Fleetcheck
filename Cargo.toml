@@ -1,0 +1,23 @@
+[package]
+name = "fleetcheck"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Raspberry Pi fleet health check over SSH"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+comfy-table = "7"
+dirs = "5"
+futures = "0.3"
+openssh = { version = "0.11", features = ["native-mux"] }
+owo-colors = { version = "4", features = ["supports-colors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+toml = "0.8"
+
+[profile.release]
+lto = "thin"
+strip = true
