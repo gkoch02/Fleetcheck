@@ -50,7 +50,10 @@ impl Thresholds {
 }
 
 pub fn default_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("fleetcheck").join("hosts.toml"))
+    // Use ~/.config/ on every platform, including macOS where dirs::config_dir()
+    // points at ~/Library/Application Support/. fleetcheck is a Unix-y CLI and
+    // the README documents the XDG path.
+    dirs::home_dir().map(|h| h.join(".config").join("fleetcheck").join("hosts.toml"))
 }
 
 pub fn load(path: &Path) -> Result<Config> {
