@@ -2,7 +2,7 @@
 name = "fleetcheck"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
 description = "Raspberry Pi fleet health check over SSH"
 
 [dependencies]

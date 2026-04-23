@@ -47,8 +47,21 @@ so `~/.cargo/bin` is on `$PATH`:
 
 ```sh
 source "$HOME/.cargo/env"
-rustc --version   # expect 1.75 or newer
+rustc --version   # expect 1.85 or newer
 ```
+
+If you already had Rust installed and it's older than 1.85, update it
+before continuing — `openssh`'s transitive deps require the 2024 edition.
+Pick the command that matches how you installed Rust:
+
+```sh
+rustup update stable    # rustup-managed toolchain
+brew upgrade rust       # Homebrew-managed toolchain
+```
+
+If `rustup` isn't on your `$PATH` and you'd rather not use Homebrew, run
+the `curl … | sh` installer above — it will take over from any prior
+install.
 
 ### 3. Confirm `ssh` is present
 
@@ -94,7 +107,7 @@ as `UNREACHABLE`.
 ```sh
 git clone <this repo> ~/src/fleetcheck
 cd ~/src/fleetcheck
-cargo install --path .
+cargo install --locked --path .
 ```
 
 `cargo install` drops a release-mode `fleetcheck` in `~/.cargo/bin/`
