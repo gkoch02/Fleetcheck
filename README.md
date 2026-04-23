@@ -17,33 +17,110 @@ Results render as a colored table, or as JSON with `--json`. The process
 exits non-zero when any host is unreachable or any configured threshold is
 crossed.
 
-## Requirements
+## Setup (fresh Mac)
 
-- **Rust** stable, 1.75+ (for building).
-- **`ssh`** client on the machine running fleetcheck — the `openssh` crate
-  uses `ssh`'s ControlMaster via its multiplexing protocol.
-- **Passwordless SSH** to every host in the config (key-based, or agent).
-  fleetcheck does not prompt for passwords.
-- **POSIX `sh`** + `awk`, `df`, `free` on the remote hosts. Default on
-  Raspberry Pi OS and Ubuntu.
+The steps below take a just-out-of-the-box Mac to a working `fleetcheck` on
+your `$PATH`. They assume Apple Silicon or Intel macOS 12+; earlier macOS
+versions work too but aren't tested.
 
-## Install
+### 1. Install Xcode Command Line Tools
+
+This brings in `git`, `cc`, and the linker that `cargo` needs.
 
 ```sh
-git clone <this repo>
-cd Fleetcheck
+xcode-select --install
+```
+
+Accept the GUI prompt and wait for it to finish.
+
+### 2. Install Rust
+
+Use the official installer. No Homebrew needed — `rustup` manages its own
+toolchains and keeps them current.
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Pick the default (stable) toolchain at the prompt, then reload your shell
+so `~/.cargo/bin` is on `$PATH`:
+
+```sh
+source "$HOME/.cargo/env"
+rustc --version   # expect 1.75 or newer
+```
+
+### 3. Confirm `ssh` is present
+
+macOS ships with OpenSSH. Nothing to install, but double-check:
+
+```sh
+ssh -V
+```
+
+### 4. Set up passwordless SSH to the fleet
+
+Skip this if you've already copied keys over. Otherwise, generate a key
+(if you don't already have `~/.ssh/id_ed25519`) and push it to each host:
+
+```sh
+ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)"   # press Enter for defaults
+for host in homebridge pihole fuzzyclock airquality dashboard counterpoint; do
+    ssh-copy-id "$host"
+done
+```
+
+Store the key in the macOS keychain so `ssh-agent` serves it automatically
+across reboots (on modern macOS, `ssh` picks this up through `ssh-agent`
+without extra config):
+
+```sh
+ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+```
+
+Verify each host answers without prompting:
+
+```sh
+for host in homebridge pihole fuzzyclock airquality dashboard counterpoint; do
+    ssh -o BatchMode=yes "$host" true && echo "$host ok" || echo "$host FAILED"
+done
+```
+
+If any host fails, fix that before moving on — fleetcheck will treat it
+as `UNREACHABLE`.
+
+### 5. Install fleetcheck
+
+```sh
+git clone <this repo> ~/src/fleetcheck
+cd ~/src/fleetcheck
 cargo install --path .
 ```
 
-That drops a `fleetcheck` binary in `~/.cargo/bin/`. Ensure that's on your
-`$PATH`.
-
-Or, to just run it in place:
+`cargo install` drops a release-mode `fleetcheck` in `~/.cargo/bin/`
+(already on `$PATH` from step 2). Verify:
 
 ```sh
-cargo build --release
-./target/release/fleetcheck
+fleetcheck --version
 ```
+
+To work in-tree without installing, use `cargo run --release -- <args>`
+instead.
+
+### 6. Create the config
+
+```sh
+mkdir -p ~/.config/fleetcheck
+$EDITOR ~/.config/fleetcheck/hosts.toml
+```
+
+See the [Configuration](#configuration) section below for the schema, then
+run `fleetcheck` — you should see a colored table of the fleet.
+
+### Remote requirements
+
+Each host needs POSIX `sh` plus `awk`, `df`, and `free`. These are present
+by default on Raspberry Pi OS and Ubuntu, so no remote setup is required.
 
 ## Configuration
 
@@ -106,11 +183,16 @@ fleetcheck --timeout-secs 10          # per-host timeout (default 5s)
 | 1    | At least one host unreachable, or at least one threshold exceeded.  |
 | 2    | Config missing/invalid, or an unrecoverable internal error.         |
 
-### Cron example
+### Cron example (macOS)
 
 ```cron
-*/5 * * * * /home/gkoch/.cargo/bin/fleetcheck --json > /var/log/fleetcheck.json 2>&1 || notify-send "fleet unhealthy"
+*/5 * * * * /Users/gkoch/.cargo/bin/fleetcheck --json > /tmp/fleetcheck.json 2>&1 || /usr/bin/osascript -e 'display notification "fleet unhealthy" with title "fleetcheck"'
 ```
+
+cron on macOS needs Full Disk Access granted to `/usr/sbin/cron` in
+System Settings → Privacy & Security → Full Disk Access if you want it
+to read files outside `/tmp`. `launchd` is the more native alternative
+if cron gives you trouble.
 
 ## Verification / smoke tests
 
