@@ -16,6 +16,8 @@ Hosts that don't answer SSH are reported as `UNREACHABLE`. Results render
 as a colored table, or as JSON with `--json`. The process exits non-zero
 when any host is unreachable or any configured threshold is crossed.
 
+![Sample fleetcheck output: a six-host table with one WARN and one UNREACHABLE row, plus a red ✗ summary line.](docs/preview.svg)
+
 ## Setup (fresh Mac)
 
 The steps below take a fresh Mac from out-of-the-box to a working
