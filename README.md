@@ -1,27 +1,26 @@
 # fleetcheck
 
 A single-binary Rust CLI that reports the health of a fleet of Linux hosts
-over SSH. Built for a small home Raspberry Pi fleet plus one Ubuntu box;
-designed to run cleanly from cron.
+over SSH. Built for a small home Raspberry Pi fleet plus one Ubuntu box,
+and designed to run cleanly from cron.
 
-Per run it concurrently checks each host for:
+On each run, fleetcheck connects to every host concurrently and collects:
 
-- SSH reachability
 - uptime
 - root-partition disk usage
 - CPU temperature (where `/sys/class/thermal/thermal_zone0/temp` exists)
 - 1-minute load average
 - memory usage %
 
-Results render as a colored table, or as JSON with `--json`. The process
-exits non-zero when any host is unreachable or any configured threshold is
-crossed.
+Hosts that don't answer SSH are reported as `UNREACHABLE`. Results render
+as a colored table, or as JSON with `--json`. The process exits non-zero
+when any host is unreachable or any configured threshold is crossed.
 
 ## Setup (fresh Mac)
 
-The steps below take a just-out-of-the-box Mac to a working `fleetcheck` on
-your `$PATH`. They assume Apple Silicon or Intel macOS 12+; earlier macOS
-versions work too but aren't tested.
+The steps below take a fresh Mac from out-of-the-box to a working
+`fleetcheck` on your `$PATH`. They assume macOS 12+ on Apple Silicon or
+Intel; earlier versions of macOS work too but aren't tested.
 
 ### 1. Install Xcode Command Line Tools
 
@@ -51,21 +50,23 @@ rustc --version   # expect 1.85 or newer
 ```
 
 If you already had Rust installed and it's older than 1.85, update it
-before continuing — `openssh`'s transitive deps require the 2024 edition.
-Pick the command that matches how you installed Rust:
+before continuing — fleetcheck's dependency tree pulls in crates that use
+the 2024 edition, which requires rustc 1.85+. Pick the command that
+matches how you installed Rust:
 
 ```sh
 rustup update stable    # rustup-managed toolchain
 brew upgrade rust       # Homebrew-managed toolchain
 ```
 
-If `rustup` isn't on your `$PATH` and you'd rather not use Homebrew, run
-the `curl … | sh` installer above — it will take over from any prior
-install.
+If neither command is available (you have an old, manually-installed
+Rust), rerun the `curl … | sh` installer above. It takes over cleanly
+from any prior install.
 
 ### 3. Confirm `ssh` is present
 
-macOS ships with OpenSSH. Nothing to install, but double-check:
+macOS ships with OpenSSH, so there's nothing to install — just
+double-check it's there:
 
 ```sh
 ssh -V
@@ -74,7 +75,7 @@ ssh -V
 ### 4. Set up passwordless SSH to the fleet
 
 Skip this if you've already copied keys over. Otherwise, generate a key
-(if you don't already have `~/.ssh/id_ed25519`) and push it to each host:
+(if `~/.ssh/id_ed25519` doesn't exist yet) and push it to each host:
 
 ```sh
 ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)"   # press Enter for defaults
@@ -84,8 +85,8 @@ done
 ```
 
 Store the key in the macOS keychain so `ssh-agent` serves it automatically
-across reboots (on modern macOS, `ssh` picks this up through `ssh-agent`
-without extra config):
+across reboots. On modern macOS, `ssh` picks this up via `ssh-agent`
+without any extra config:
 
 ```sh
 ssh-add --apple-use-keychain ~/.ssh/id_ed25519
@@ -99,7 +100,7 @@ for host in homebridge pihole fuzzyclock airquality dashboard counterpoint; do
 done
 ```
 
-If any host fails, fix that before moving on — fleetcheck will treat it
+Fix any failures before moving on — fleetcheck will report unfixed hosts
 as `UNREACHABLE`.
 
 ### 5. Install fleetcheck
@@ -110,8 +111,8 @@ cd ~/src/fleetcheck
 cargo install --locked --path .
 ```
 
-`cargo install` drops a release-mode `fleetcheck` in `~/.cargo/bin/`
-(already on `$PATH` from step 2). Verify:
+`cargo install` drops a release-mode `fleetcheck` binary in
+`~/.cargo/bin/`, which is already on `$PATH` from step 2. Verify:
 
 ```sh
 fleetcheck --version
@@ -132,8 +133,9 @@ run `fleetcheck` — you should see a colored table of the fleet.
 
 ### Remote requirements
 
-Each host needs POSIX `sh` plus `awk`, `df`, and `free`. These are present
-by default on Raspberry Pi OS and Ubuntu, so no remote setup is required.
+Each host needs POSIX `sh` plus `awk`, `df`, and `free`. All three are
+present by default on Raspberry Pi OS and Ubuntu, so no remote setup is
+required.
 
 ## Configuration
 
@@ -154,11 +156,12 @@ mem_pct  = 90      # used memory %
 [hosts.airquality]
 [hosts.dashboard]
 
-# Override per host when defaults don't fit — e.g. a tiny SD card that runs
-# near full on purpose.
+# Override per host when the defaults don't fit — e.g. a tiny SD card
+# that runs near full on purpose.
 [hosts.fuzzyclock]
-  [hosts.fuzzyclock.thresholds]
-  disk_pct = 95
+
+[hosts.fuzzyclock.thresholds]
+disk_pct = 95
 
 # Full form: custom address, user, port.
 [hosts.counterpoint]
@@ -169,15 +172,16 @@ port = 22
 
 **Field reference (host table):**
 
-| Field        | Default                | Notes                                   |
-|--------------|------------------------|-----------------------------------------|
-| `addr`       | the table key          | Hostname or IP passed to `ssh`.         |
-| `user`       | `$USER` / `~/.ssh/config` | Override when the remote user differs. |
-| `port`       | 22 / `~/.ssh/config`   | Override for non-standard ports.        |
-| `thresholds` | global `[thresholds]`  | Any subset of the four threshold keys.  |
+| Field        | Default                  | Notes                                  |
+|--------------|--------------------------|----------------------------------------|
+| `addr`       | the table key            | Hostname or IP passed to `ssh`.        |
+| `user`       | from `~/.ssh/config`, else local user | Override when the remote user differs. |
+| `port`       | from `~/.ssh/config`, else 22 | Override for non-standard ports. |
+| `thresholds` | global `[thresholds]`    | Any subset of the four threshold keys. |
 
-Anything configurable through `~/.ssh/config` (jump hosts, key files, aliases)
-is honored because fleetcheck shells out through the system `ssh`.
+fleetcheck shells out through the system `ssh`, so anything configurable
+in `~/.ssh/config` (jump hosts, identity files, host aliases) is honored
+automatically.
 
 ## Usage
 
@@ -198,18 +202,21 @@ fleetcheck --timeout-secs 10          # per-host timeout (default 5s)
 
 ### Cron example (macOS)
 
+Run every five minutes; pop a desktop notification when fleetcheck exits
+non-zero:
+
 ```cron
 */5 * * * * /Users/gkoch/.cargo/bin/fleetcheck --json > /tmp/fleetcheck.json 2>&1 || /usr/bin/osascript -e 'display notification "fleet unhealthy" with title "fleetcheck"'
 ```
 
-cron on macOS needs Full Disk Access granted to `/usr/sbin/cron` in
-System Settings → Privacy & Security → Full Disk Access if you want it
-to read files outside `/tmp`. `launchd` is the more native alternative
-if cron gives you trouble.
+If you want cron to read files outside `/tmp`, grant Full Disk Access to
+`/usr/sbin/cron` under System Settings → Privacy & Security → Full Disk
+Access. `launchd` is the more native alternative if cron gives you
+trouble.
 
 ## Verification / smoke tests
 
-After setup, run through these to confirm the install end-to-end:
+After setup, run through these to confirm the install works end-to-end:
 
 1. **Happy path**
    ```sh
@@ -227,13 +234,13 @@ After setup, run through these to confirm the install end-to-end:
    one entry per host, sorted by name, same numbers as the table.
 
 3. **Threshold violation triggers a non-zero exit**
-   Temporarily edit `~/.config/fleetcheck/hosts.toml` to set an impossibly
-   tight threshold, e.g. `disk_pct = 1`:
+   Temporarily edit `~/.config/fleetcheck/hosts.toml` to set an
+   impossibly tight threshold, e.g. `disk_pct = 1`:
    ```sh
    fleetcheck; echo "exit=$?"
    ```
    Expect: offending cells render red and bold, the status column reads
-   `WARN`, summary line starts with a red `✗`, `exit=1`.
+   `WARN`, the summary line starts with a red `✗`, and `exit=1`.
 
 4. **Unreachable host**
    Power off one host (or add a fake entry pointing at an unreachable
@@ -242,21 +249,21 @@ After setup, run through these to confirm the install end-to-end:
    fleetcheck; echo "exit=$?"
    ```
    Expect: that host's row shows `UNREACHABLE (...)` in red with em-dashes
-   in the metric columns, `exit=1`.
+   in the metric columns, and `exit=1`.
 
 5. **Missing config — hard error path**
    ```sh
    fleetcheck --config /does/not/exist; echo "exit=$?"
    ```
    Expect: a single-line error like `fleetcheck: reading config at
-   /does/not/exist: No such file or directory (os error 2)`, `exit=2`.
+   /does/not/exist: No such file or directory (os error 2)`, and `exit=2`.
 
 6. **Non-TTY output is plain**
    ```sh
    fleetcheck | cat
    ```
-   Expect: no ANSI color escapes in the piped output (comfy-table and
-   owo-colors both detect the non-TTY sink).
+   Expect: no ANSI color escapes in the piped output. Both comfy-table
+   and owo-colors detect the non-TTY sink and disable color.
 
 ## Development
 
@@ -283,7 +290,7 @@ src/
 
 ### Extending with a new metric
 
-1. Add one `echo "key=value"` line to `src/script.sh`.
+1. Add one `key=value` line to `src/script.sh`.
 2. Add a field to `Metrics` in `src/metrics.rs` and handle the new key in
    `parse()`.
 3. (Optional) Add a threshold field in `src/config.rs` and a `Violation`

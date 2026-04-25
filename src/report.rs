@@ -127,3 +127,107 @@ pub fn render_json(reports: &[HostReport], thresholds: &Thresholds) -> Result<St
     let env = Envelope { thresholds, hosts: reports };
     Ok(serde_json::to_string_pretty(&env)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::check::{HostOutcome, HostReport, Metric, Violation};
+    use crate::metrics::Metrics;
+    use std::time::Duration;
+
+    fn defaults() -> Thresholds {
+        Thresholds { disk_pct: 85, temp_c: 75.0, load_1m: 2.0, mem_pct: 90 }
+    }
+
+    fn ok_report(name: &str, violations: Vec<Violation>) -> HostReport {
+        HostReport {
+            name: name.into(),
+            outcome: HostOutcome::Ok {
+                metrics: Metrics {
+                    uptime: Duration::from_secs(3_600),
+                    disk_pct: 50,
+                    temp_c: Some(45.0),
+                    load_1m: 0.5,
+                    mem_pct: 30,
+                },
+                violations,
+            },
+        }
+    }
+
+    fn unreachable_report(name: &str, error: &str) -> HostReport {
+        HostReport {
+            name: name.into(),
+            outcome: HostOutcome::Unreachable { error: error.into() },
+        }
+    }
+
+    #[test]
+    fn summary_line_all_healthy() {
+        let reports = vec![ok_report("a", vec![]), ok_report("b", vec![])];
+        let s = summary_line(&reports);
+        assert!(s.contains("all 2 hosts healthy"), "got: {s}");
+    }
+
+    #[test]
+    fn summary_line_counts_failures() {
+        let reports = vec![
+            ok_report("a", vec![]),
+            ok_report(
+                "b",
+                vec![Violation { metric: Metric::Disk, value: 99.0, limit: 85.0 }],
+            ),
+            unreachable_report("c", "connection refused"),
+        ];
+        let s = summary_line(&reports);
+        assert!(s.contains("1 unreachable"), "got: {s}");
+        assert!(s.contains("1 with warnings"), "got: {s}");
+        assert!(s.contains("of 3 hosts"), "got: {s}");
+    }
+
+    #[test]
+    fn render_json_envelope_shape() {
+        let reports = vec![
+            ok_report("alpha", vec![]),
+            unreachable_report("beta", "boom"),
+        ];
+        let json = render_json(&reports, &defaults()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(v.get("thresholds").is_some());
+        let hosts = v["hosts"].as_array().expect("hosts is an array");
+        assert_eq!(hosts.len(), 2);
+
+        assert_eq!(hosts[0]["name"], "alpha");
+        assert_eq!(hosts[0]["status"], "ok");
+        // Uptime is serialized as a flat integer, not the default {secs, nanos}.
+        assert!(hosts[0]["metrics"]["uptime_secs"].is_u64());
+
+        assert_eq!(hosts[1]["name"], "beta");
+        assert_eq!(hosts[1]["status"], "unreachable");
+        assert_eq!(hosts[1]["error"], "boom");
+    }
+
+    #[test]
+    fn render_table_includes_host_names_and_status() {
+        let reports = vec![
+            ok_report("alpha", vec![]),
+            unreachable_report("beta", "no route to host"),
+        ];
+        let t = render_table(&reports);
+        assert!(t.contains("alpha"));
+        assert!(t.contains("beta"));
+        assert!(t.contains("OK"));
+        assert!(t.contains("UNREACHABLE"));
+    }
+
+    #[test]
+    fn render_table_marks_warn_on_violations() {
+        let reports = vec![ok_report(
+            "alpha",
+            vec![Violation { metric: Metric::Disk, value: 99.0, limit: 85.0 }],
+        )];
+        let t = render_table(&reports);
+        assert!(t.contains("WARN"), "got: {t}");
+    }
+}

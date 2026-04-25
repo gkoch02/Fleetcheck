@@ -123,6 +123,41 @@ mem_pct=1
     }
 
     #[test]
+    fn unknown_keys_are_ignored() {
+        // The parser is forward-compatible: a newer script can emit extra
+        // keys without breaking older binaries.
+        let raw = "\
+uptime_secs=1
+disk_pct=1
+temp_millic=
+load_1m=0.0
+mem_pct=1
+brand_new_metric=42
+";
+        assert!(parse(raw).is_ok());
+    }
+
+    #[test]
+    fn malformed_line_errors() {
+        let raw = "uptime_secs=1\nnot-a-kv-line\nmem_pct=1\n";
+        assert!(parse(raw).is_err());
+    }
+
+    #[test]
+    fn blank_lines_are_skipped() {
+        let raw = "\
+uptime_secs=1
+
+disk_pct=1
+temp_millic=
+
+load_1m=0.0
+mem_pct=1
+";
+        assert!(parse(raw).is_ok());
+    }
+
+    #[test]
     fn uptime_formatting() {
         assert_eq!(format_uptime(Duration::from_secs(30)), "30s");
         assert_eq!(format_uptime(Duration::from_secs(125)), "2m");
