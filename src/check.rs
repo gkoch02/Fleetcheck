@@ -152,4 +152,74 @@ mod tests {
         };
         assert!(evaluate(&m, &th()).is_empty());
     }
+
+    #[test]
+    fn flags_all_four_metrics_when_all_exceed() {
+        let m = Metrics {
+            uptime: Duration::from_secs(1),
+            disk_pct: 99,
+            temp_c: Some(99.0),
+            load_1m: 9.9,
+            mem_pct: 99,
+        };
+        let v = evaluate(&m, &th());
+        assert_eq!(v.len(), 4);
+    }
+
+    #[test]
+    fn equal_to_threshold_is_not_a_violation() {
+        // Comparison is strictly greater than, so a value sitting exactly
+        // on the threshold is still considered healthy.
+        let m = Metrics {
+            uptime: Duration::from_secs(1),
+            disk_pct: 85,
+            temp_c: Some(75.0),
+            load_1m: 2.0,
+            mem_pct: 90,
+        };
+        assert!(evaluate(&m, &th()).is_empty());
+    }
+
+    fn healthy_metrics() -> Metrics {
+        Metrics {
+            uptime: Duration::from_secs(0),
+            disk_pct: 0,
+            temp_c: None,
+            load_1m: 0.0,
+            mem_pct: 0,
+        }
+    }
+
+    #[test]
+    fn is_bad_false_for_clean_ok() {
+        let r = HostReport {
+            name: "a".into(),
+            outcome: HostOutcome::Ok {
+                metrics: healthy_metrics(),
+                violations: vec![],
+            },
+        };
+        assert!(!r.is_bad());
+    }
+
+    #[test]
+    fn is_bad_true_for_violations() {
+        let r = HostReport {
+            name: "a".into(),
+            outcome: HostOutcome::Ok {
+                metrics: healthy_metrics(),
+                violations: vec![Violation { metric: Metric::Disk, value: 99.0, limit: 85.0 }],
+            },
+        };
+        assert!(r.is_bad());
+    }
+
+    #[test]
+    fn is_bad_true_for_unreachable() {
+        let r = HostReport {
+            name: "a".into(),
+            outcome: HostOutcome::Unreachable { error: "boom".into() },
+        };
+        assert!(r.is_bad());
+    }
 }
