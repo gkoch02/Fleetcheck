@@ -21,8 +21,10 @@ free | awk '/^Mem:/ {printf "mem_pct=%.0f\n", $3/$2*100}'
 free | awk '/^Swap:/ {if ($2 > 0) printf "swap_pct=%.0f\n", $3/$2*100; else print "swap_pct="}'
 
 # Process count via ps. NR-1 strips the header row; using `wc -l` would
-# over-count by one and trip thresholds spuriously.
-ps -e | awk 'END{print "proc_count=" NR-1}'
+# over-count by one and trip thresholds spuriously. Clamp to 0 in the
+# pathological case where ps emits no output at all (NR=0 → -1), so the
+# parser doesn't fail and turn the whole host into UNREACHABLE.
+ps -e | awk 'END{n=NR-1; if (n<0) n=0; print "proc_count=" n}'
 
 # Primary IPv4 / IPv6. `hostname -I` returns all assigned global addresses
 # space-separated; we take the first. Empty value when unavailable (minimal

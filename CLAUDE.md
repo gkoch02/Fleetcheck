@@ -73,7 +73,7 @@ Module map:
   hits), `evaluate`, `metric_value_by_name`, `check_host`, `retry_async` +
   `backoff_with_jitter` (used only around `ssh::connect`).
 - `report.rs` — comfy-table renderer (host, status, uptime, disk %, temp,
-  load, mem %, swap %, procs), JSON envelope (`{ thresholds, hosts }`),
+  load, mem %, swap %, procs, ip), JSON envelope (`{ thresholds, hosts }`),
   summary line. Uses `owo-colors` with `Stream::Stdout` so colors auto-disable
   when piped.
 
@@ -102,11 +102,22 @@ A test pins this shape (`render_json_envelope_shape`).
 **JSON shape is part of the contract.** Top-level is
 `{ "thresholds": {...}, "hosts": [...] }` and each host row is flattened with
 `status: "ok" | "unreachable"` plus the variant payload. Cron pipelines parse
-this; don't reshape it casually. v2 additions are additive: `Option` typed
-fields use `skip_serializing_if = "Option::is_none"`, and `thresholds.custom`
-is always present (an empty `{}` when unused). Tests pin the typed
-`thresholds` key set (`render_json_thresholds_keys_are_stable`) and the
-`Metric::Custom` payload shape.
+this; don't reshape it casually. v2 additions are additive, but the rule
+differs by struct:
+
+- **`Metrics`** always serializes every field. `Option` fields appear as
+  `null` when absent (`temp_c`, `swap_pct`, `proc_count`, `ip_addr` all
+  follow this). This gives consumers a stable schema — they can always
+  reach `metrics.foo` without checking for key existence.
+- **`Thresholds`** uses `skip_serializing_if = "Option::is_none"` on the
+  v2-added typed fields (`swap_pct`, `proc_count`) so a config that
+  doesn't set them produces JSON byte-identical to v1 under the
+  `thresholds` key. `custom` is always present (an empty `{}` when
+  unused) so consumers can always do `thresholds.custom.foo`.
+
+Tests pin the typed `thresholds` key set under default config
+(`render_json_thresholds_keys_are_stable`) and the `Metric::Custom`
+payload shape.
 
 **Custom thresholds without re-typing.** Users can add a `[thresholds.custom]`
 TOML map to threshold any metric the script emits — even ones the binary

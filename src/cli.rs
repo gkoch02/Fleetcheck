@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use clap::Parser;
 
 pub const DEFAULT_CONNECT_SECS: u64 = 5;
-pub const DEFAULT_SCRIPT_SECS: u64 = 10;
+// Equal to DEFAULT_CONNECT_SECS so the v2 default per-host wall-clock
+// budget (~10s) exactly matches v1's `--timeout-secs 5` applied to both
+// phases. Cron lines that never set --timeout-secs in v1 see no behavior
+// change on upgrade.
+pub const DEFAULT_SCRIPT_SECS: u64 = 5;
 pub const DEFAULT_MAX_CONCURRENT: usize = 32;
 
 /// Raspberry Pi fleet health check.

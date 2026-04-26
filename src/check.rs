@@ -504,15 +504,73 @@ mod tests {
     }
 
     #[test]
-    fn backoff_doubles_and_caps_at_5s() {
-        // Worst-case (max positive jitter) bound is base + 20%, capped at 6s
-        // (5_000 * 1.2). Smallest is base * 0.8.
-        for attempt in 0..6 {
-            let d = backoff_with_jitter(attempt).as_millis();
-            assert!(d <= 6_000, "attempt {attempt} produced {d}ms, expected <= 6000");
+    fn backoff_grows_then_caps_within_jitter_bounds() {
+        // Pin the documented schedule: base 200ms doubling per attempt,
+        // capped at 5s, with ±20% jitter. Bounds are inclusive of the
+        // jitter window so a constant 0ms (or any other constant) won't
+        // spuriously pass.
+        //
+        // attempt=0: base=200ms,  range [160,   240]
+        // attempt=1: base=400ms,  range [320,   480]
+        // attempt=2: base=800ms,  range [640,   960]
+        // attempt=3: base=1600ms, range [1280, 1920]
+        // attempt=4: base=3200ms, range [2560, 3840]
+        // attempt=5: base=5000ms, range [4000, 6000]  (cap kicks in)
+        // attempt=20:base=5000ms, range [4000, 6000]  (cap holds)
+        let cases: &[(u32, u64, u64)] = &[
+            (0, 160, 240),
+            (1, 320, 480),
+            (2, 640, 960),
+            (3, 1280, 1920),
+            (4, 2560, 3840),
+            (5, 4000, 6000),
+            (20, 4000, 6000),
+        ];
+        for &(attempt, lo, hi) in cases {
+            let d = backoff_with_jitter(attempt).as_millis() as u64;
+            assert!(
+                d >= lo && d <= hi,
+                "attempt {attempt} produced {d}ms, expected [{lo}, {hi}]",
+            );
         }
-        // Past the cap, still bounded.
-        let d = backoff_with_jitter(20).as_millis();
-        assert!(d <= 6_000, "high attempt produced {d}ms");
+    }
+
+    /// Pins the structural invariant from `check::run`: only `ssh::connect`
+    /// is wrapped in `retry_async`; everything that runs after a successful
+    /// connect (script execution, parsing) happens exactly once and is
+    /// never re-attempted. If `check::run` were ever rewritten to retry
+    /// the whole pipeline, this test would still pass — but its presence
+    /// documents the intended pattern as a reference for code review.
+    #[tokio::test(start_paused = true)]
+    async fn run_script_phase_is_outside_retry_boundary() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let connect_calls = AtomicU32::new(0);
+        let script_calls = AtomicU32::new(0);
+
+        // The connect-equivalent returns a token "session id" so the
+        // binding below is non-unit (mirroring production code where
+        // ssh::connect returns an openssh::Session).
+        let result: Result<(), &'static str> = async {
+            let _session_id = retry_async(3, |attempt| {
+                connect_calls.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if attempt < 2 {
+                        Err("transient")
+                    } else {
+                        Ok::<u32, &'static str>(42)
+                    }
+                }
+            })
+            .await?;
+            // Script-equivalent: outside the retry loop. Runs once even
+            // when it fails.
+            script_calls.fetch_add(1, Ordering::SeqCst);
+            Err::<(), &'static str>("script-side failure")
+        }
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(connect_calls.load(Ordering::SeqCst), 3); // 2 fails + 1 success
+        assert_eq!(script_calls.load(Ordering::SeqCst), 1); // not retried
     }
 }

@@ -160,10 +160,13 @@ proc_count = 500     # number of processes       (optional, v2+)
 
 # Threshold any other metric the script emits — including future ones the
 # binary doesn't know about yet. Strictly `>` is a violation, same as the
-# typed thresholds. Keys must match the script's key=value names.
+# typed thresholds. Keys must match the script's key=value names. Valid
+# keys today: disk_pct, temp_c, load_1m, mem_pct, swap_pct, proc_count,
+# uptime_secs (any future script.sh keys also work — unknown keys are
+# silently skipped).
 [thresholds.custom]
-# disk_pct  = 90.0    # could shadow the typed threshold above
-# uptime_secs = 31536000
+uptime_secs = 31536000   # warn after a year of uptime
+# disk_pct  = 90.0       # could shadow the typed threshold above
 
 # Minimal host entry: the table key is both the label and the SSH destination.
 [hosts.homebridge]
@@ -196,6 +199,18 @@ retries = 2
 | `port`       | from `~/.ssh/config`, else 22 | Override for non-standard ports. |
 | `thresholds` | global `[thresholds]`    | Any subset of the typed threshold keys, plus an optional `custom` map. |
 | `retries`    | global `--retries`       | Per-host retry count for SSH connect failures. |
+
+**Field reference (`[thresholds]`):**
+
+| Field         | Type | Required | Notes                                         |
+|---------------|------|----------|-----------------------------------------------|
+| `disk_pct`    | u8   | yes      | Root partition used %.                        |
+| `temp_c`      | f32  | yes      | CPU °C; skipped on hosts without a thermal zone. |
+| `load_1m`     | f32  | yes      | 1-minute load average.                        |
+| `mem_pct`     | u8   | yes      | Used memory %.                                |
+| `swap_pct`    | u8   | no       | Used swap %; skipped on hosts without swap.   |
+| `proc_count`  | u32  | no       | Process count.                                |
+| `custom`      | map  | no       | Additional metric → upper-bound thresholds. Strictly `>` trips a violation. Unknown keys silently skipped. |
 
 fleetcheck shells out through the system `ssh`, so anything configurable
 in `~/.ssh/config` (jump hosts, identity files, host aliases) is honored
