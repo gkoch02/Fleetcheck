@@ -63,22 +63,16 @@ pub fn parse(text: &str) -> Result<Metrics> {
             }
             "load_1m" => load_1m = Some(value.parse()?),
             "mem_pct" => mem_pct = Some(value.parse()?),
-            "swap_pct" => {
-                if !value.is_empty() {
-                    swap_pct = Some(value.parse()?);
-                }
+            "swap_pct" if !value.is_empty() => {
+                swap_pct = Some(value.parse()?);
             }
-            "proc_count" => {
-                if !value.is_empty() {
-                    proc_count = Some(value.parse()?);
-                }
+            "proc_count" if !value.is_empty() => {
+                proc_count = Some(value.parse()?);
             }
-            "ip_addr" => {
-                if !value.is_empty() {
-                    ip_addr = Some(value.to_string());
-                }
+            "ip_addr" if !value.is_empty() => {
+                ip_addr = Some(value.to_string());
             }
-            _ => {} // ignore unknown keys so the script can evolve without breaking old clients
+            _ => {} // ignore unknown keys (and empty optional values) so the script can evolve without breaking old clients
         }
     }
 

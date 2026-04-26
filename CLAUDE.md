@@ -126,6 +126,13 @@ doesn't have a typed field for. The lookup goes through
 there. Custom-map keys with no matching metric are silently skipped (forward
 compat).
 
+**Custom shadows typed.** When a `[thresholds.custom]` key names a typed
+metric (e.g. `disk_pct`), `evaluate` skips the typed check for that key
+and only the custom limit fires. This lets users raise or lower a typed
+threshold via the custom map without producing two violations for the
+same underlying metric. Tests `custom_shadows_typed_threshold_for_same_key`
+and `custom_shadow_does_not_double_fire` pin this.
+
 **Retries are connect-only.** `check::run` wraps `ssh::connect` in
 `retry_async`; `run_script` and `metrics::parse` are not retried. A
 successful connect followed by a script/parse failure is deterministic and

@@ -72,54 +72,68 @@ impl HostReport {
 /// without a thermal zone or without swap simply can't violate that
 /// threshold. Custom-map keys that don't match any known metric are
 /// silently ignored (forward-compatible with future script keys).
+///
+/// **Custom shadows typed.** When `[thresholds.custom]` contains a key
+/// that names a typed metric (e.g. `disk_pct`), the typed check for that
+/// metric is skipped and only the custom limit fires. This lets a user
+/// raise or lower a typed threshold via the custom map without producing
+/// two violations for the same underlying metric.
 fn evaluate(m: &Metrics, t: &Thresholds) -> Vec<Violation> {
     let mut out = Vec::new();
-    if m.disk_pct > t.disk_pct {
+    let shadowed = |name: &str| t.custom.contains_key(name);
+
+    if !shadowed("disk_pct") && m.disk_pct > t.disk_pct {
         out.push(Violation {
             metric: Metric::Disk,
             value: m.disk_pct as f64,
             limit: t.disk_pct as f64,
         });
     }
-    if let Some(c) = m.temp_c {
-        if c > t.temp_c {
-            out.push(Violation {
-                metric: Metric::Temp,
-                value: c as f64,
-                limit: t.temp_c as f64,
-            });
+    if !shadowed("temp_c") {
+        if let Some(c) = m.temp_c {
+            if c > t.temp_c {
+                out.push(Violation {
+                    metric: Metric::Temp,
+                    value: c as f64,
+                    limit: t.temp_c as f64,
+                });
+            }
         }
     }
-    if m.load_1m > t.load_1m {
+    if !shadowed("load_1m") && m.load_1m > t.load_1m {
         out.push(Violation {
             metric: Metric::Load,
             value: m.load_1m as f64,
             limit: t.load_1m as f64,
         });
     }
-    if m.mem_pct > t.mem_pct {
+    if !shadowed("mem_pct") && m.mem_pct > t.mem_pct {
         out.push(Violation {
             metric: Metric::Mem,
             value: m.mem_pct as f64,
             limit: t.mem_pct as f64,
         });
     }
-    if let (Some(swap), Some(limit)) = (m.swap_pct, t.swap_pct) {
-        if swap > limit {
-            out.push(Violation {
-                metric: Metric::Swap,
-                value: swap as f64,
-                limit: limit as f64,
-            });
+    if !shadowed("swap_pct") {
+        if let (Some(swap), Some(limit)) = (m.swap_pct, t.swap_pct) {
+            if swap > limit {
+                out.push(Violation {
+                    metric: Metric::Swap,
+                    value: swap as f64,
+                    limit: limit as f64,
+                });
+            }
         }
     }
-    if let (Some(proc), Some(limit)) = (m.proc_count, t.proc_count) {
-        if proc > limit {
-            out.push(Violation {
-                metric: Metric::Proc,
-                value: proc as f64,
-                limit: limit as f64,
-            });
+    if !shadowed("proc_count") {
+        if let (Some(procs), Some(limit)) = (m.proc_count, t.proc_count) {
+            if procs > limit {
+                out.push(Violation {
+                    metric: Metric::Proc,
+                    value: procs as f64,
+                    limit: limit as f64,
+                });
+            }
         }
     }
     for (key, &limit) in &t.custom {
@@ -378,6 +392,55 @@ mod tests {
         match &v[0].metric {
             Metric::Custom(name) => assert_eq!(name, "proc_count"),
             other => panic!("expected Custom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn custom_shadows_typed_threshold_for_same_key() {
+        // disk typed limit = 85; custom raises it to 90. A host at 87
+        // would previously trip the typed check; with shadow semantics it
+        // should be healthy because the custom entry takes over.
+        let mut t = th();
+        t.custom.insert("disk_pct".into(), 90.0);
+        let m = Metrics {
+            uptime: Duration::from_secs(1),
+            disk_pct: 87,
+            temp_c: None,
+            load_1m: 0.0,
+            mem_pct: 0,
+            swap_pct: None,
+            proc_count: None,
+            ip_addr: None,
+        };
+        let v = evaluate(&m, &t);
+        assert!(
+            v.is_empty(),
+            "expected custom to shadow typed, got {v:?}"
+        );
+    }
+
+    #[test]
+    fn custom_shadow_does_not_double_fire() {
+        // Both typed and custom would individually fire (95 > 85 and
+        // 95 > 90); shadow semantics means we get exactly one Custom
+        // violation, not a typed plus a custom for the same metric.
+        let mut t = th();
+        t.custom.insert("disk_pct".into(), 90.0);
+        let m = Metrics {
+            uptime: Duration::from_secs(1),
+            disk_pct: 95,
+            temp_c: None,
+            load_1m: 0.0,
+            mem_pct: 0,
+            swap_pct: None,
+            proc_count: None,
+            ip_addr: None,
+        };
+        let v = evaluate(&m, &t);
+        assert_eq!(v.len(), 1);
+        match &v[0].metric {
+            Metric::Custom(name) => assert_eq!(name, "disk_pct"),
+            other => panic!("expected single Custom violation, got {other:?}"),
         }
     }
 

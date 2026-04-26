@@ -164,9 +164,13 @@ proc_count = 500     # number of processes       (optional, v2+)
 # keys today: disk_pct, temp_c, load_1m, mem_pct, swap_pct, proc_count,
 # uptime_secs (any future script.sh keys also work — unknown keys are
 # silently skipped).
+#
+# A custom-map entry whose key names a typed metric SHADOWS the typed
+# check: only the custom limit fires, so users can raise or lower a
+# typed threshold without producing two violations for the same metric.
 [thresholds.custom]
 uptime_secs = 31536000   # warn after a year of uptime
-# disk_pct  = 90.0       # could shadow the typed threshold above
+disk_pct    = 90.0       # shadows the typed disk_pct = 85 above
 
 # Minimal host entry: the table key is both the label and the SSH destination.
 [hosts.homebridge]
@@ -223,7 +227,7 @@ fleetcheck                            # colored table
 fleetcheck --json                     # machine-readable output
 fleetcheck --config ./other.toml      # alternate config path
 fleetcheck --connect-timeout 5        # SSH connect timeout (default 5s)
-fleetcheck --script-timeout 10        # remote script timeout (default 10s)
+fleetcheck --script-timeout 5         # remote script timeout (default 5s)
 fleetcheck --retries 2                # retry SSH connect with backoff (default 0)
 fleetcheck --max-concurrent 8         # cap parallel hosts (default 32, 0=unbounded)
 ```
