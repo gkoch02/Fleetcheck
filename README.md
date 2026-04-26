@@ -22,9 +22,6 @@ when any host is unreachable or any configured threshold is crossed.
 
 ![Sample fleetcheck output: a six-host table with one WARN and one UNREACHABLE row, plus a red ✗ summary line.](docs/preview.svg)
 
-*Preview image is from v1 and shows the seven original columns; v2 also
-renders `swap %`, `procs`, and `ip` to the right.*
-
 ## Setup (fresh Mac)
 
 The steps below take a fresh Mac from out-of-the-box to a working

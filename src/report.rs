@@ -305,6 +305,108 @@ mod tests {
         );
     }
 
+    /// Prints the canonical sample-fleet table used to regenerate
+    /// `docs/preview.svg`. Ignored by default; run with
+    /// `cargo test --release preview_for_svg -- --ignored --nocapture`
+    /// after a layout change and re-author the SVG from the captured
+    /// box-drawing output.
+    #[test]
+    #[ignore]
+    fn preview_for_svg() {
+        fn ok(name: &str, m: Metrics, v: Vec<Violation>) -> HostReport {
+            HostReport {
+                name: name.into(),
+                outcome: HostOutcome::Ok { metrics: m, violations: v },
+            }
+        }
+        fn unreachable(name: &str, err: &str) -> HostReport {
+            HostReport {
+                name: name.into(),
+                outcome: HostOutcome::Unreachable { error: err.into() },
+            }
+        }
+
+        let reports = vec![
+            ok(
+                "airquality",
+                Metrics {
+                    uptime: Duration::from_secs(9 * 86_400 + 12 * 3_600),
+                    disk_pct: 58,
+                    temp_c: Some(78.4),
+                    load_1m: 0.27,
+                    mem_pct: 47,
+                    swap_pct: Some(12),
+                    proc_count: Some(184),
+                    ip_addr: Some("192.168.1.34".into()),
+                },
+                vec![Violation { metric: Metric::Temp, value: 78.4, limit: 75.0 }],
+            ),
+            unreachable("counterpoint", "connection timed out"),
+            ok(
+                "dashboard",
+                Metrics {
+                    uptime: Duration::from_secs(21 * 86_400 + 5 * 3_600),
+                    disk_pct: 33,
+                    temp_c: Some(41.8),
+                    load_1m: 0.09,
+                    mem_pct: 29,
+                    swap_pct: Some(0),
+                    proc_count: Some(142),
+                    ip_addr: Some("192.168.1.21".into()),
+                },
+                vec![],
+            ),
+            ok(
+                "fuzzyclock",
+                Metrics {
+                    uptime: Duration::from_secs(2 * 86_400 + 4 * 3_600),
+                    disk_pct: 71,
+                    temp_c: Some(52.3),
+                    load_1m: 0.42,
+                    mem_pct: 55,
+                    swap_pct: Some(8),
+                    proc_count: Some(167),
+                    ip_addr: Some("192.168.1.55".into()),
+                },
+                vec![],
+            ),
+            ok(
+                "homebridge",
+                Metrics {
+                    uptime: Duration::from_secs(14 * 86_400 + 3 * 3_600),
+                    disk_pct: 42,
+                    temp_c: Some(48.2),
+                    load_1m: 0.31,
+                    mem_pct: 38,
+                    swap_pct: Some(3),
+                    proc_count: Some(196),
+                    ip_addr: Some("192.168.1.10".into()),
+                },
+                vec![],
+            ),
+            ok(
+                "pihole",
+                Metrics {
+                    uptime: Duration::from_secs(7 * 86_400 + 21 * 3_600),
+                    disk_pct: 61,
+                    temp_c: Some(51.7),
+                    load_1m: 0.18,
+                    mem_pct: 44,
+                    swap_pct: Some(5),
+                    proc_count: Some(155),
+                    ip_addr: Some("192.168.1.5".into()),
+                },
+                vec![],
+            ),
+        ];
+
+        // Force plain output so the captured text is byte-identical to
+        // what cron pipelines see (no ANSI escapes).
+        owo_colors::set_override(false);
+        println!("{}", render_table(&reports));
+        println!("{}", summary_line(&reports));
+    }
+
     #[test]
     fn render_json_custom_violation_carries_metric_name() {
         // Custom-threshold violations should round-trip through JSON
