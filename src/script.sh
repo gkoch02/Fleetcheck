@@ -15,3 +15,11 @@ fi
 awk '{print "load_1m=" $1}' /proc/loadavg
 
 free | awk '/^Mem:/ {printf "mem_pct=%.0f\n", $3/$2*100}'
+
+# Swap may be absent on containers / hosts with no swap; emit empty value
+# in that case so the binary records it as "metric unavailable".
+free | awk '/^Swap:/ {if ($2 > 0) printf "swap_pct=%.0f\n", $3/$2*100; else print "swap_pct="}'
+
+# Process count via ps. NR-1 strips the header row; using `wc -l` would
+# over-count by one and trip thresholds spuriously.
+ps -e | awk 'END{print "proc_count=" NR-1}'

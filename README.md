@@ -11,6 +11,8 @@ On each run, fleetcheck connects to every host concurrently and collects:
 - CPU temperature (where `/sys/class/thermal/thermal_zone0/temp` exists)
 - 1-minute load average
 - memory usage %
+- swap usage % (where swap is configured)
+- process count
 
 Hosts that don't answer SSH are reported as `UNREACHABLE`. Results render
 as a colored table, or as JSON with `--json`. The process exits non-zero
@@ -135,9 +137,9 @@ run `fleetcheck` — you should see a colored table of the fleet.
 
 ### Remote requirements
 
-Each host needs POSIX `sh` plus `awk`, `df`, and `free`. All three are
-present by default on Raspberry Pi OS and Ubuntu, so no remote setup is
-required.
+Each host needs POSIX `sh` plus `awk`, `df`, `free`, and `ps`. All four
+are present by default on Raspberry Pi OS and Ubuntu, so no remote setup
+is required.
 
 ## Configuration
 
@@ -147,10 +149,19 @@ fleetcheck reads a TOML file at `~/.config/fleetcheck/hosts.toml` by default
 ```toml
 # Default thresholds; tripped values render red and make the run exit 1.
 [thresholds]
-disk_pct = 85      # root partition used %
-temp_c   = 75.0    # CPU °C
-load_1m  = 2.0     # 1-minute load average
-mem_pct  = 90      # used memory %
+disk_pct   = 85      # root partition used %
+temp_c     = 75.0    # CPU °C
+load_1m    = 2.0     # 1-minute load average
+mem_pct    = 90      # used memory %
+swap_pct   = 50      # used swap %               (optional, v2+)
+proc_count = 500     # number of processes       (optional, v2+)
+
+# Threshold any other metric the script emits — including future ones the
+# binary doesn't know about yet. Strictly `>` is a violation, same as the
+# typed thresholds. Keys must match the script's key=value names.
+[thresholds.custom]
+# disk_pct  = 90.0    # could shadow the typed threshold above
+# uptime_secs = 31536000
 
 # Minimal host entry: the table key is both the label and the SSH destination.
 [hosts.homebridge]
@@ -165,11 +176,13 @@ mem_pct  = 90      # used memory %
 [hosts.fuzzyclock.thresholds]
 disk_pct = 95
 
-# Full form: custom address, user, port.
+# Full form: custom address, user, port. Per-host retry override is
+# useful for hosts on a flaky network — see --retries below.
 [hosts.counterpoint]
 addr = "counterpoint.lan"
 user = "gkoch"
 port = 22
+retries = 2
 ```
 
 **Field reference (host table):**
@@ -179,7 +192,8 @@ port = 22
 | `addr`       | the table key            | Hostname or IP passed to `ssh`.        |
 | `user`       | from `~/.ssh/config`, else local user | Override when the remote user differs. |
 | `port`       | from `~/.ssh/config`, else 22 | Override for non-standard ports. |
-| `thresholds` | global `[thresholds]`    | Any subset of the four threshold keys. |
+| `thresholds` | global `[thresholds]`    | Any subset of the typed threshold keys, plus an optional `custom` map. |
+| `retries`    | global `--retries`       | Per-host retry count for SSH connect failures. |
 
 fleetcheck shells out through the system `ssh`, so anything configurable
 in `~/.ssh/config` (jump hosts, identity files, host aliases) is honored
@@ -191,8 +205,30 @@ automatically.
 fleetcheck                            # colored table
 fleetcheck --json                     # machine-readable output
 fleetcheck --config ./other.toml      # alternate config path
-fleetcheck --timeout-secs 10          # per-host timeout (default 5s)
+fleetcheck --connect-timeout 5        # SSH connect timeout (default 5s)
+fleetcheck --script-timeout 10        # remote script timeout (default 10s)
+fleetcheck --retries 2                # retry SSH connect with backoff (default 0)
+fleetcheck --max-concurrent 8         # cap parallel hosts (default 32, 0=unbounded)
 ```
+
+`--timeout-secs N` is still accepted as a deprecated alias that sets both
+`--connect-timeout` and `--script-timeout` to `N`, so existing cron lines
+keep working.
+
+### Reliability flags
+
+- `--connect-timeout` bounds the TCP+SSH handshake. A host that doesn't
+  answer within this budget is recorded as `UNREACHABLE`.
+- `--script-timeout` bounds the remote metric-collection script
+  separately, so a slow but reachable host can finish without forcing the
+  connect timeout up.
+- `--retries N` retries only the connect phase up to `N` times with
+  exponential backoff (200ms doubling, capped at 5s) plus ±20% jitter.
+  Default is `0` (v1 behavior). A successful connect that then fails is
+  not retried.
+- `--max-concurrent N` caps how many hosts are checked in parallel,
+  preventing a 100-host fleet from opening 100 SSH sessions at once.
+  `--max-concurrent 0` is unbounded.
 
 ### Exit codes
 
@@ -293,11 +329,16 @@ src/
 ### Extending with a new metric
 
 1. Add one `key=value` line to `src/script.sh`.
-2. Add a field to `Metrics` in `src/metrics.rs` and handle the new key in
-   `parse()`.
-3. (Optional) Add a threshold field in `src/config.rs` and a `Violation`
-   check in `src/check.rs::evaluate`.
+2. Add an `Option<...>` field to `Metrics` in `src/metrics.rs` and handle
+   the new key in `parse()`. Use `Option` so old binaries running against
+   a newer script keep working.
+3. (Optional) Either add a typed threshold in `src/config.rs` plus a
+   `Violation` check in `src/check.rs::evaluate`, or expose the new
+   metric to `[thresholds.custom]` by adding it to
+   `metric_value_by_name` in `src/check.rs`.
 4. Add a column in `src/report.rs`.
 
 The parser ignores unknown keys, so an updated script can roll out ahead
-of the binary without breaking existing deployments.
+of the binary without breaking existing deployments. Likewise,
+`[thresholds.custom]` keys that don't match any known metric are silently
+skipped, so configs can be staged ahead of binary upgrades.

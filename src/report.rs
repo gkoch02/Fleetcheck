@@ -51,6 +51,8 @@ pub fn render_table(reports: &[HostReport]) -> String {
         Cell::new("temp °C").add_attribute(comfy_table::Attribute::Bold),
         Cell::new("load 1m").add_attribute(comfy_table::Attribute::Bold),
         Cell::new("mem %").add_attribute(comfy_table::Attribute::Bold),
+        Cell::new("swap %").add_attribute(comfy_table::Attribute::Bold),
+        Cell::new("procs").add_attribute(comfy_table::Attribute::Bold),
     ]);
 
     for r in reports {
@@ -72,6 +74,8 @@ fn ok_row(name: &str, m: &Metrics, violations: &[Violation]) -> Vec<Cell> {
     let temp_bad = violations.iter().any(|v| matches!(v.metric, Metric::Temp));
     let load_bad = violations.iter().any(|v| matches!(v.metric, Metric::Load));
     let mem_bad = violations.iter().any(|v| matches!(v.metric, Metric::Mem));
+    let swap_bad = violations.iter().any(|v| matches!(v.metric, Metric::Swap));
+    let proc_bad = violations.iter().any(|v| matches!(v.metric, Metric::Proc));
 
     let status_cell = if violations.is_empty() {
         Cell::new("OK").fg(Color::Green)
@@ -90,6 +94,14 @@ fn ok_row(name: &str, m: &Metrics, violations: &[Violation]) -> Vec<Cell> {
         },
         metric_cell(format!("{:.2}", m.load_1m), load_bad),
         metric_cell(format!("{}", m.mem_pct), mem_bad),
+        match m.swap_pct {
+            Some(v) => metric_cell(format!("{v}"), swap_bad),
+            None => Cell::new(MISSING).fg(Color::DarkGrey),
+        },
+        match m.proc_count {
+            Some(v) => metric_cell(format!("{v}"), proc_bad),
+            None => Cell::new(MISSING).fg(Color::DarkGrey),
+        },
     ]
 }
 
@@ -97,6 +109,8 @@ fn unreachable_row(name: &str, error: &str) -> Vec<Cell> {
     vec![
         Cell::new(name),
         Cell::new(format!("UNREACHABLE ({error})")).fg(Color::Red),
+        Cell::new(MISSING).fg(Color::DarkGrey),
+        Cell::new(MISSING).fg(Color::DarkGrey),
         Cell::new(MISSING).fg(Color::DarkGrey),
         Cell::new(MISSING).fg(Color::DarkGrey),
         Cell::new(MISSING).fg(Color::DarkGrey),
@@ -136,7 +150,15 @@ mod tests {
     use std::time::Duration;
 
     fn defaults() -> Thresholds {
-        Thresholds { disk_pct: 85, temp_c: 75.0, load_1m: 2.0, mem_pct: 90 }
+        Thresholds {
+            disk_pct: 85,
+            temp_c: 75.0,
+            load_1m: 2.0,
+            mem_pct: 90,
+            swap_pct: None,
+            proc_count: None,
+            custom: std::collections::BTreeMap::new(),
+        }
     }
 
     fn ok_report(name: &str, violations: Vec<Violation>) -> HostReport {
@@ -149,6 +171,8 @@ mod tests {
                     temp_c: Some(45.0),
                     load_1m: 0.5,
                     mem_pct: 30,
+                    swap_pct: Some(5),
+                    proc_count: Some(150),
                 },
                 violations,
             },
@@ -229,5 +253,58 @@ mod tests {
         )];
         let t = render_table(&reports);
         assert!(t.contains("WARN"), "got: {t}");
+    }
+
+    #[test]
+    fn render_json_includes_new_metric_fields() {
+        let reports = vec![ok_report("alpha", vec![])];
+        let json = render_json(&reports, &defaults()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(v["hosts"][0]["metrics"]["swap_pct"].is_u64());
+        assert!(v["hosts"][0]["metrics"]["proc_count"].is_u64());
+    }
+
+    #[test]
+    fn render_json_includes_custom_threshold_map() {
+        let mut t = defaults();
+        t.custom.insert("proc_count".into(), 500.0);
+        let reports = vec![ok_report("alpha", vec![])];
+        let json = render_json(&reports, &t).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["thresholds"]["custom"]["proc_count"], 500.0);
+    }
+
+    #[test]
+    fn render_json_thresholds_keys_are_stable() {
+        // The JSON contract pins which keys appear under `thresholds`. v2
+        // additions are: `custom` (always present), `swap_pct`/`proc_count`
+        // (only when set, via skip_serializing_if).
+        let json = render_json(&[], &defaults()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let t = v["thresholds"].as_object().expect("thresholds is object");
+        let mut keys: Vec<_> = t.keys().cloned().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec!["custom", "disk_pct", "load_1m", "mem_pct", "temp_c"],
+        );
+    }
+
+    #[test]
+    fn render_json_custom_violation_carries_metric_name() {
+        // Custom-threshold violations should round-trip through JSON
+        // carrying the metric name so cron pipelines can act on them.
+        let reports = vec![ok_report(
+            "alpha",
+            vec![Violation {
+                metric: Metric::Custom("proc_count".into()),
+                value: 600.0,
+                limit: 500.0,
+            }],
+        )];
+        let json = render_json(&reports, &defaults()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let violations = v["hosts"][0]["violations"].as_array().unwrap();
+        assert_eq!(violations[0]["metric"]["custom"], "proc_count");
     }
 }
