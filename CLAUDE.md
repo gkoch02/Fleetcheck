@@ -5,10 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 `fleetcheck` is a single-binary Rust CLI that SSHes into a list of Linux hosts in
-parallel, runs an embedded shell script to collect seven metrics (uptime, root
-disk %, CPU temp, 1m load, mem %, swap %, proc count), and reports either a
-colored table or JSON. Designed to be run from cron, so its exit code is the
-primary signal.
+parallel, runs an embedded shell script to collect eight metrics (uptime, root
+disk %, CPU temp, 1m load, mem %, swap %, proc count, primary IP), and reports
+either a colored table or JSON. Designed to be run from cron, so its exit code
+is the primary signal.
 
 Requires Rust 1.85+ (the dependency tree pulls in 2024-edition crates).
 
@@ -60,13 +60,16 @@ Module map:
   optional `retries` override), `Thresholds::merged` (per-host overlay,
   custom-map merged per-key), `load`.
 - `metrics.rs` — `Metrics` struct, `parse` for `key=value` script output,
-  `format_uptime`. New v2 fields (`swap_pct`, `proc_count`) are `Option`.
+  `format_uptime`. New v2 fields (`swap_pct`, `proc_count`, `ip_addr`) are
+  `Option`. Empty-value parse arms use match guards
+  (`"swap_pct" if !value.is_empty() => ...`) rather than nested `if`, to
+  satisfy clippy's `collapsible_match` lint.
 - `ssh.rs` — `connect` + `run_script` (each takes its own timeout). The
   bundled script is loaded via `include_str!("script.sh")`, so the binary has
   no runtime asset dependency.
-- `script.sh` — POSIX `sh` + `awk` + `df` + `free` + `ps`. Emits one
-  `key=value` per line; an empty value (e.g. `temp_millic=` or `swap_pct=`)
-  means "metric unavailable".
+- `script.sh` — POSIX `sh` + `awk` + `df` + `free` + `ps` + `hostname -I`.
+  Emits one `key=value` per line; an empty value (e.g. `temp_millic=`,
+  `swap_pct=`, or `ip_addr=`) means "metric unavailable".
 - `check.rs` — `Timeouts`, `HostReport` / `HostOutcome` (serde-tagged enum:
   `status: "ok"` or `"unreachable"` is flattened into each row), `Violation`,
   `Metric` (typed variants plus `Custom(String)` for `[thresholds.custom]`

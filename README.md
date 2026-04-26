@@ -4,7 +4,8 @@ A single-binary Rust CLI that reports the health of a fleet of Linux hosts
 over SSH. Built for a small home Raspberry Pi fleet plus one Ubuntu box,
 and designed to run cleanly from cron.
 
-On each run, fleetcheck connects to every host concurrently and collects:
+On each run, fleetcheck connects to every host in parallel (capped by
+`--max-concurrent`, default 32) and collects:
 
 - uptime
 - root-partition disk usage
@@ -20,6 +21,9 @@ as a colored table, or as JSON with `--json`. The process exits non-zero
 when any host is unreachable or any configured threshold is crossed.
 
 ![Sample fleetcheck output: a six-host table with one WARN and one UNREACHABLE row, plus a red ✗ summary line.](docs/preview.svg)
+
+*Preview image is from v1 and shows the seven original columns; v2 also
+renders `swap %`, `procs`, and `ip` to the right.*
 
 ## Setup (fresh Mac)
 
