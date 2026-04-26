@@ -258,6 +258,7 @@ mod tests {
             mem_pct: 40,
             swap_pct: None,
             proc_count: None,
+            ip_addr: None,
         };
         let v = evaluate(&m, &th());
         assert_eq!(v.len(), 1);
@@ -274,6 +275,7 @@ mod tests {
             mem_pct: 10,
             swap_pct: None,
             proc_count: None,
+            ip_addr: None,
         };
         assert!(evaluate(&m, &th()).is_empty());
     }
@@ -291,6 +293,7 @@ mod tests {
             mem_pct: 99,
             swap_pct: Some(99),
             proc_count: Some(999),
+            ip_addr: None,
         };
         let v = evaluate(&m, &t);
         assert_eq!(v.len(), 6);
@@ -313,6 +316,7 @@ mod tests {
             mem_pct: 90,
             swap_pct: Some(50),
             proc_count: Some(500),
+            ip_addr: None,
         };
         assert!(evaluate(&m, &t).is_empty());
     }
@@ -330,6 +334,7 @@ mod tests {
             mem_pct: 0,
             swap_pct: Some(60),
             proc_count: Some(600),
+            ip_addr: None,
         };
         let v = evaluate(&m, &t);
         assert_eq!(v.len(), 2);
@@ -349,6 +354,7 @@ mod tests {
             mem_pct: 0,
             swap_pct: None, // host has no swap
             proc_count: None,
+            ip_addr: None,
         };
         assert!(evaluate(&m, &t).is_empty());
     }
@@ -365,6 +371,7 @@ mod tests {
             mem_pct: 0,
             swap_pct: None,
             proc_count: Some(101),
+            ip_addr: None,
         };
         let v = evaluate(&m, &t);
         assert_eq!(v.len(), 1);
@@ -389,6 +396,7 @@ mod tests {
             mem_pct: 0,
             swap_pct: None,
             proc_count: None,
+            ip_addr: None,
         };
         assert!(evaluate(&m, &t).is_empty());
     }
@@ -402,6 +410,7 @@ mod tests {
             mem_pct: 0,
             swap_pct: None,
             proc_count: None,
+            ip_addr: None,
         }
     }
 

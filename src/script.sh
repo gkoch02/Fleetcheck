@@ -23,3 +23,9 @@ free | awk '/^Swap:/ {if ($2 > 0) printf "swap_pct=%.0f\n", $3/$2*100; else prin
 # Process count via ps. NR-1 strips the header row; using `wc -l` would
 # over-count by one and trip thresholds spuriously.
 ps -e | awk 'END{print "proc_count=" NR-1}'
+
+# Primary IPv4 / IPv6. `hostname -I` returns all assigned global addresses
+# space-separated; we take the first. Empty value when unavailable (minimal
+# distros without `hostname -I`, hosts with no global address, etc).
+ip_addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
+echo "ip_addr=${ip_addr}"

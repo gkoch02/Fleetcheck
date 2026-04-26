@@ -53,6 +53,7 @@ pub fn render_table(reports: &[HostReport]) -> String {
         Cell::new("mem %").add_attribute(comfy_table::Attribute::Bold),
         Cell::new("swap %").add_attribute(comfy_table::Attribute::Bold),
         Cell::new("procs").add_attribute(comfy_table::Attribute::Bold),
+        Cell::new("ip").add_attribute(comfy_table::Attribute::Bold),
     ]);
 
     for r in reports {
@@ -102,6 +103,10 @@ fn ok_row(name: &str, m: &Metrics, violations: &[Violation]) -> Vec<Cell> {
             Some(v) => metric_cell(format!("{v}"), proc_bad),
             None => Cell::new(MISSING).fg(Color::DarkGrey),
         },
+        match &m.ip_addr {
+            Some(addr) => Cell::new(addr),
+            None => Cell::new(MISSING).fg(Color::DarkGrey),
+        },
     ]
 }
 
@@ -109,6 +114,7 @@ fn unreachable_row(name: &str, error: &str) -> Vec<Cell> {
     vec![
         Cell::new(name),
         Cell::new(format!("UNREACHABLE ({error})")).fg(Color::Red),
+        Cell::new(MISSING).fg(Color::DarkGrey),
         Cell::new(MISSING).fg(Color::DarkGrey),
         Cell::new(MISSING).fg(Color::DarkGrey),
         Cell::new(MISSING).fg(Color::DarkGrey),
@@ -173,6 +179,7 @@ mod tests {
                     mem_pct: 30,
                     swap_pct: Some(5),
                     proc_count: Some(150),
+                    ip_addr: Some("10.0.0.42".into()),
                 },
                 violations,
             },
@@ -262,6 +269,14 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(v["hosts"][0]["metrics"]["swap_pct"].is_u64());
         assert!(v["hosts"][0]["metrics"]["proc_count"].is_u64());
+        assert_eq!(v["hosts"][0]["metrics"]["ip_addr"], "10.0.0.42");
+    }
+
+    #[test]
+    fn render_table_includes_ip_address() {
+        let reports = vec![ok_report("alpha", vec![])];
+        let t = render_table(&reports);
+        assert!(t.contains("10.0.0.42"), "got: {t}");
     }
 
     #[test]

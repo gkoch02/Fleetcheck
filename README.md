@@ -13,6 +13,7 @@ On each run, fleetcheck connects to every host concurrently and collects:
 - memory usage %
 - swap usage % (where swap is configured)
 - process count
+- primary IP address (from `hostname -I`)
 
 Hosts that don't answer SSH are reported as `UNREACHABLE`. Results render
 as a colored table, or as JSON with `--json`. The process exits non-zero
@@ -137,9 +138,10 @@ run `fleetcheck` — you should see a colored table of the fleet.
 
 ### Remote requirements
 
-Each host needs POSIX `sh` plus `awk`, `df`, `free`, and `ps`. All four
-are present by default on Raspberry Pi OS and Ubuntu, so no remote setup
-is required.
+Each host needs POSIX `sh` plus `awk`, `df`, `free`, `ps`, and
+`hostname`. All five are present by default on Raspberry Pi OS and
+Ubuntu, so no remote setup is required. (`hostname -I` powers the IP
+column; on minimal distros without that flag, the IP cell shows `—`.)
 
 ## Configuration
 
