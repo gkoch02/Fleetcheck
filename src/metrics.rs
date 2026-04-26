@@ -11,6 +11,16 @@ pub struct Metrics {
     pub temp_c: Option<f32>,
     pub load_1m: f32,
     pub mem_pct: u8,
+    /// `Option` so a v2 binary against a v1 script (which doesn't emit
+    /// `swap_pct`) keeps working. Also `None` on hosts with no swap
+    /// configured.
+    pub swap_pct: Option<u8>,
+    /// `Option` for the same reason — old scripts won't emit this key.
+    pub proc_count: Option<u32>,
+    /// Primary IP as reported by `hostname -I` on the remote. `None` when
+    /// the script can't determine it (older script, minimal distro without
+    /// `hostname -I`, host with no global address).
+    pub ip_addr: Option<String>,
 }
 
 // Flat u64 instead of serde's default {"secs": N, "nanos": N} struct shape.
@@ -29,6 +39,9 @@ pub fn parse(text: &str) -> Result<Metrics> {
     let mut temp_c: Option<f32> = None;
     let mut load_1m: Option<f32> = None;
     let mut mem_pct: Option<u8> = None;
+    let mut swap_pct: Option<u8> = None;
+    let mut proc_count: Option<u32> = None;
+    let mut ip_addr: Option<String> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -50,7 +63,16 @@ pub fn parse(text: &str) -> Result<Metrics> {
             }
             "load_1m" => load_1m = Some(value.parse()?),
             "mem_pct" => mem_pct = Some(value.parse()?),
-            _ => {} // ignore unknown keys so the script can evolve without breaking old clients
+            "swap_pct" if !value.is_empty() => {
+                swap_pct = Some(value.parse()?);
+            }
+            "proc_count" if !value.is_empty() => {
+                proc_count = Some(value.parse()?);
+            }
+            "ip_addr" if !value.is_empty() => {
+                ip_addr = Some(value.to_string());
+            }
+            _ => {} // ignore unknown keys (and empty optional values) so the script can evolve without breaking old clients
         }
     }
 
@@ -62,6 +84,9 @@ pub fn parse(text: &str) -> Result<Metrics> {
         temp_c,
         load_1m: load_1m.ok_or_else(|| anyhow!("missing load_1m"))?,
         mem_pct: mem_pct.ok_or_else(|| anyhow!("missing mem_pct"))?,
+        swap_pct,
+        proc_count,
+        ip_addr,
     })
 }
 
@@ -94,6 +119,9 @@ disk_pct=42
 temp_millic=48312
 load_1m=0.17
 mem_pct=31
+swap_pct=8
+proc_count=212
+ip_addr=192.168.1.42
 ";
         let m = parse(raw).unwrap();
         assert_eq!(m.uptime, Duration::from_secs(359_245));
@@ -101,6 +129,61 @@ mem_pct=31
         assert!((m.temp_c.unwrap() - 48.312).abs() < 1e-3);
         assert!((m.load_1m - 0.17).abs() < 1e-6);
         assert_eq!(m.mem_pct, 31);
+        assert_eq!(m.swap_pct, Some(8));
+        assert_eq!(m.proc_count, Some(212));
+        assert_eq!(m.ip_addr.as_deref(), Some("192.168.1.42"));
+    }
+
+    #[test]
+    fn legacy_v1_script_output_still_parses() {
+        // A v2 binary against a v1 script (no swap_pct / proc_count keys)
+        // must keep working — those fields just become `None`.
+        let raw = "\
+uptime_secs=1
+disk_pct=1
+temp_millic=
+load_1m=0.0
+mem_pct=1
+";
+        let m = parse(raw).unwrap();
+        assert!(m.swap_pct.is_none());
+        assert!(m.proc_count.is_none());
+        assert!(m.ip_addr.is_none());
+    }
+
+    #[test]
+    fn empty_ip_addr_is_none() {
+        // `hostname -I` may produce nothing on minimal containers / hosts
+        // with no global address. The script emits an empty value so the
+        // binary records it as unavailable.
+        let raw = "\
+uptime_secs=1
+disk_pct=1
+temp_millic=
+load_1m=0.0
+mem_pct=1
+ip_addr=
+";
+        let m = parse(raw).unwrap();
+        assert!(m.ip_addr.is_none());
+    }
+
+    #[test]
+    fn empty_swap_is_none() {
+        // `free` shows Swap: 0 0 0 on swapless hosts; the script emits an
+        // empty value so the binary records swap as unavailable.
+        let raw = "\
+uptime_secs=1
+disk_pct=1
+temp_millic=
+load_1m=0.0
+mem_pct=1
+swap_pct=
+proc_count=10
+";
+        let m = parse(raw).unwrap();
+        assert!(m.swap_pct.is_none());
+        assert_eq!(m.proc_count, Some(10));
     }
 
     #[test]
