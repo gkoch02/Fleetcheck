@@ -1,5 +1,7 @@
 # fleetcheck
 
+[![CI](https://github.com/gkoch02/Fleetcheck/actions/workflows/ci.yml/badge.svg)](https://github.com/gkoch02/Fleetcheck/actions/workflows/ci.yml)
+
 A single-binary Rust CLI that reports the health of a fleet of Linux hosts
 over SSH. Built for a small home Raspberry Pi fleet plus one Ubuntu box,
 and designed to run cleanly from cron.
