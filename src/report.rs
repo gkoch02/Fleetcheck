@@ -407,6 +407,72 @@ mod tests {
         println!("{}", summary_line(&reports));
     }
 
+    fn ok_report_no_optionals(name: &str) -> HostReport {
+        HostReport {
+            name: name.into(),
+            outcome: HostOutcome::Ok {
+                metrics: Metrics {
+                    uptime: Duration::from_secs(60),
+                    disk_pct: 40,
+                    temp_c: None,
+                    load_1m: 0.1,
+                    mem_pct: 20,
+                    swap_pct: None,
+                    proc_count: None,
+                    ip_addr: None,
+                },
+                violations: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn render_json_absent_optional_metrics_serialize_as_null() {
+        // Contract from CLAUDE.md: Option fields appear as `null` when absent
+        // so consumers can always reach metrics.foo without a key-existence check.
+        let reports = vec![ok_report_no_optionals("alpha")];
+        let json = render_json(&reports, &defaults()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let m = &v["hosts"][0]["metrics"];
+        assert!(m["temp_c"].is_null(), "temp_c should be null, got {}", m["temp_c"]);
+        assert!(m["swap_pct"].is_null(), "swap_pct should be null, got {}", m["swap_pct"]);
+        assert!(m["proc_count"].is_null(), "proc_count should be null, got {}", m["proc_count"]);
+        assert!(m["ip_addr"].is_null(), "ip_addr should be null, got {}", m["ip_addr"]);
+    }
+
+    #[test]
+    fn render_table_shows_dash_for_absent_optional_metrics() {
+        // ok_row has separate None branches for temp_c, swap_pct, proc_count,
+        // and ip_addr that render MISSING ("—"). Exercise them all at once.
+        let reports = vec![ok_report_no_optionals("alpha")];
+        let t = render_table(&reports);
+        // Each absent optional column should render as the MISSING sentinel.
+        let dash_count = t.matches(MISSING).count();
+        assert!(
+            dash_count >= 4,
+            "expected at least 4 '—' cells for absent optionals, got {dash_count} in:\n{t}",
+        );
+    }
+
+    #[test]
+    fn summary_line_empty_fleet() {
+        // A config with no hosts at all shouldn't panic, just report 0.
+        let s = summary_line(&[]);
+        assert!(s.contains("all 0 hosts healthy"), "got: {s}");
+    }
+
+    #[test]
+    fn summary_line_all_unreachable() {
+        let reports = vec![
+            unreachable_report("a", "timeout"),
+            unreachable_report("b", "refused"),
+        ];
+        let s = summary_line(&reports);
+        assert!(s.contains("2 unreachable"), "got: {s}");
+        assert!(s.contains("0 with warnings"), "got: {s}");
+        assert!(s.contains("of 2 hosts"), "got: {s}");
+    }
+
     #[test]
     fn render_json_custom_violation_carries_metric_name() {
         // Custom-threshold violations should round-trip through JSON
