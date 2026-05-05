@@ -205,7 +205,7 @@ retries = 2
 | `user`       | from `~/.ssh/config`, else local user | Override when the remote user differs. |
 | `port`       | from `~/.ssh/config`, else 22 | Override for non-standard ports. |
 | `thresholds` | global `[thresholds]`    | Any subset of the typed threshold keys, plus an optional `custom` map. |
-| `retries`    | global `--retries`       | Per-host retry count for SSH connect failures. |
+| `retries`    | 0                        | Per-host SSH connect retry count. Applies only when `--retries` is left at its default of 0; a non-zero CLI flag overrides all hosts. |
 
 **Field reference (`[thresholds]`):**
 
@@ -249,7 +249,9 @@ keep working.
 - `--retries N` retries only the connect phase up to `N` times with
   exponential backoff (200ms doubling, capped at 5s) plus ±20% jitter.
   Default is `0` (v1 behavior). A successful connect that then fails is
-  not retried.
+  not retried. When left at `0`, per-host `retries` keys in the config
+  file take effect; a non-zero `--retries` overrides all per-host
+  settings.
 - `--max-concurrent N` caps how many hosts are checked in parallel,
   preventing a 100-host fleet from opening 100 SSH sessions at once.
   `--max-concurrent 0` is unbounded.
@@ -354,8 +356,8 @@ src/
 
 1. Add one `key=value` line to `src/script.sh`.
 2. Add an `Option<...>` field to `Metrics` in `src/metrics.rs` and handle
-   the new key in `parse()`. Use `Option` so old binaries running against
-   a newer script keep working.
+   the new key in `parse()`. Use `Option` so a new binary keeps working
+   against hosts that haven't had their script updated yet.
 3. (Optional) Either add a typed threshold in `src/config.rs` plus a
    `Violation` check in `src/check.rs::evaluate`, or expose the new
    metric to `[thresholds.custom]` by adding it to
