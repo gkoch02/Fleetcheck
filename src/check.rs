@@ -155,7 +155,7 @@ fn evaluate(m: &Metrics, t: &Thresholds) -> Vec<Violation> {
 /// Resolve a metric by name to a comparable f64. Names match the
 /// `key=value` lines emitted by `script.sh` plus `temp_c` (the parsed,
 /// not-millidegrees form). Unknown keys return `None`.
-fn metric_value_by_name(m: &Metrics, key: &str) -> Option<f64> {
+pub(crate) fn metric_value_by_name(m: &Metrics, key: &str) -> Option<f64> {
     match key {
         "disk_pct" => Some(m.disk_pct as f64),
         "load_1m" => Some(m.load_1m as f64),
@@ -635,5 +635,99 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(connect_calls.load(Ordering::SeqCst), 3); // 2 fails + 1 success
         assert_eq!(script_calls.load(Ordering::SeqCst), 1); // not retried
+    }
+
+    fn full_metrics() -> Metrics {
+        Metrics {
+            uptime: Duration::from_secs(3600),
+            disk_pct: 50,
+            temp_c: Some(55.0),
+            load_1m: 1.5,
+            mem_pct: 60,
+            swap_pct: Some(20),
+            proc_count: Some(300),
+            ip_addr: None,
+        }
+    }
+
+    #[test]
+    fn metric_value_by_name_all_present_arms() {
+        let m = full_metrics();
+        assert_eq!(metric_value_by_name(&m, "disk_pct"), Some(50.0));
+        assert_eq!(metric_value_by_name(&m, "load_1m"), Some(1.5));
+        assert_eq!(metric_value_by_name(&m, "mem_pct"), Some(60.0));
+        assert!((metric_value_by_name(&m, "temp_c").unwrap() - 55.0).abs() < 1e-3);
+        assert_eq!(metric_value_by_name(&m, "swap_pct"), Some(20.0));
+        assert_eq!(metric_value_by_name(&m, "proc_count"), Some(300.0));
+        assert_eq!(metric_value_by_name(&m, "uptime_secs"), Some(3600.0));
+    }
+
+    #[test]
+    fn metric_value_by_name_returns_none_for_absent_optionals() {
+        let m = Metrics {
+            uptime: Duration::from_secs(0),
+            disk_pct: 0,
+            temp_c: None,
+            load_1m: 0.0,
+            mem_pct: 0,
+            swap_pct: None,
+            proc_count: None,
+            ip_addr: None,
+        };
+        assert_eq!(metric_value_by_name(&m, "temp_c"), None);
+        assert_eq!(metric_value_by_name(&m, "swap_pct"), None);
+        assert_eq!(metric_value_by_name(&m, "proc_count"), None);
+    }
+
+    #[test]
+    fn metric_value_by_name_unknown_key_returns_none() {
+        let m = full_metrics();
+        assert_eq!(metric_value_by_name(&m, "nonexistent_metric"), None);
+        assert_eq!(metric_value_by_name(&m, ""), None);
+    }
+
+    #[test]
+    fn custom_threshold_on_uptime_secs_fires() {
+        // uptime_secs is a supported custom-threshold key but has no typed
+        // threshold — this test pins that the arm in metric_value_by_name
+        // actually feeds through evaluate correctly.
+        let mut t = th();
+        t.custom.insert("uptime_secs".into(), 100.0); // trips if uptime > 100s
+        let m = Metrics {
+            uptime: Duration::from_secs(200),
+            disk_pct: 0,
+            temp_c: None,
+            load_1m: 0.0,
+            mem_pct: 0,
+            swap_pct: None,
+            proc_count: None,
+            ip_addr: None,
+        };
+        let v = evaluate(&m, &t);
+        assert_eq!(v.len(), 1);
+        match &v[0].metric {
+            Metric::Custom(name) => assert_eq!(name, "uptime_secs"),
+            other => panic!("expected Custom(uptime_secs), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn custom_threshold_on_absent_optional_is_silently_skipped() {
+        // A custom threshold on e.g. temp_c should not fire when the host
+        // has no thermal sensor (temp_c is None). metric_value_by_name
+        // returns None for absent optionals, and evaluate skips those.
+        let mut t = th();
+        t.custom.insert("temp_c".into(), 0.0); // would fire for any present temp
+        let m = Metrics {
+            uptime: Duration::from_secs(1),
+            disk_pct: 0,
+            temp_c: None,
+            load_1m: 0.0,
+            mem_pct: 0,
+            swap_pct: None,
+            proc_count: None,
+            ip_addr: None,
+        };
+        assert!(evaluate(&m, &t).is_empty());
     }
 }

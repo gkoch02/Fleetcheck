@@ -247,4 +247,16 @@ mem_pct=1
         assert_eq!(format_uptime(Duration::from_secs(3_700)), "1h 1m");
         assert_eq!(format_uptime(Duration::from_secs(90_000)), "1d 1h");
     }
+
+    #[test]
+    fn uptime_formatting_boundaries() {
+        // Zero seconds
+        assert_eq!(format_uptime(Duration::ZERO), "0s");
+        // Exactly on the minute boundary
+        assert_eq!(format_uptime(Duration::from_secs(60)), "1m");
+        // Exactly on the hour boundary — shows "1h 0m" (minutes column is 0)
+        assert_eq!(format_uptime(Duration::from_secs(3_600)), "1h 0m");
+        // Exactly on the day boundary — shows "1d 0h" (hours column is 0)
+        assert_eq!(format_uptime(Duration::from_secs(86_400)), "1d 0h");
+    }
 }

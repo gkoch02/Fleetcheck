@@ -189,6 +189,41 @@ mod tests {
     }
 
     #[test]
+    fn load_reads_valid_config_from_disk() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(
+            &mut f,
+            b"[thresholds]\ndisk_pct = 85\ntemp_c = 75.0\nload_1m = 2.0\nmem_pct = 90\n[hosts.pi]\n",
+        )
+        .unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.thresholds.disk_pct, 85);
+        assert_eq!(cfg.hosts.len(), 1);
+        assert!(cfg.hosts.contains_key("pi"));
+    }
+
+    #[test]
+    fn load_error_on_missing_file() {
+        let path = std::path::Path::new("/tmp/fleetcheck_nonexistent_xyzzy.toml");
+        let err = load(path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("fleetcheck_nonexistent_xyzzy.toml"), "path missing from error: {msg}");
+    }
+
+    #[test]
+    fn load_error_on_malformed_toml() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut f, b"this is not valid toml ][[\n").unwrap();
+        let err = load(f.path()).unwrap_err();
+        let msg = format!("{err:#}");
+        // The with_context wrapper should include the file path in the error chain.
+        assert!(
+            msg.contains(f.path().to_str().unwrap()),
+            "path missing from error: {msg}",
+        );
+    }
+
+    #[test]
     fn parses_full_config() {
         let raw = r#"
             [thresholds]
